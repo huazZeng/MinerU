@@ -57,7 +57,7 @@ async def parse_pdf(
 
     try:
         # 创建唯一的输出目录
-        unique_dir = os.path.join(output_dir, str(uuid.uuid4()))
+        unique_dir = output_dir
         os.makedirs(unique_dir, exist_ok=True)
 
         # 处理上传的PDF文件
@@ -97,7 +97,7 @@ async def parse_pdf(
         if len(actual_lang_list) != len(pdf_file_names):
             # 如果语言列表长度不匹配，使用第一个语言或默认"ch"
             actual_lang_list = [actual_lang_list[0] if actual_lang_list else "ch"] * len(pdf_file_names)
-
+        print(f"start_to_parse_pdf")
         # 调用异步处理函数
         await aio_do_parse(
             output_dir=unique_dir,
@@ -165,6 +165,81 @@ async def parse_pdf(
         return JSONResponse(
             status_code=500,
             content={"error": f"Failed to process file: {str(e)}"}
+        )
+
+@app.post(path="/forward")
+async def forward_parse(
+        files: List[UploadFile] = File(...),
+        output_dir: str = Form("./output"),
+        lang_list: List[str] = Form(["ch"]),
+        backend: str = Form("pipeline"),
+        parse_method: str = Form("auto"),
+        formula_enable: bool = Form(True),
+        table_enable: bool = Form(True),
+        server_url: Optional[str] = Form(None),
+        return_md: bool = Form(True),
+        return_middle_json: bool = Form(False),
+        return_model_output: bool = Form(False),
+        return_content_list: bool = Form(False),
+        return_images: bool = Form(False),
+        start_page_id: int = Form(0),
+        end_page_id: int = Form(99999),
+):
+    try:
+        # Split files into batches of at most 20
+        batch_size = 20
+        file_batches = [files[i:i + batch_size] for i in range(0, len(files), batch_size)]
+        
+        # Split lang_list to match batches (if needed)
+        actual_lang_list = lang_list
+        if len(actual_lang_list) != len(files):
+            actual_lang_list = [actual_lang_list[0] if actual_lang_list else "ch"] * len(files)
+        
+        lang_batches = [actual_lang_list[i:i + batch_size] for i in range(0, len(actual_lang_list), batch_size)]
+        
+        # Process each batch by calling parse_pdf
+        for i, (file_batch, lang_batch) in enumerate(zip(file_batches, lang_batches)):
+            logger.info(f"Processing batch {i+1}/{len(file_batches)} with {len(file_batch)} files")
+            
+            # Create form data for this batch
+            form_data = {
+                "output_dir": output_dir,
+                "lang_list": lang_batch,
+                "backend": backend,
+                "parse_method": parse_method,
+                "formula_enable": formula_enable,
+                "table_enable": table_enable,
+                "server_url": server_url,
+                "return_md": return_md,
+                "return_middle_json": return_middle_json,
+                "return_model_output": return_model_output,
+                "return_content_list": return_content_list,
+                "return_images": return_images,
+                "start_page_id": start_page_id,
+                "end_page_id": end_page_id
+            }
+            
+            # Call parse_pdf directly without storing results
+            await parse_pdf(
+                files=file_batch,
+                **form_data
+            )
+        
+        # Return success response without storing results
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": f"Successfully processed {len(files)} files in {len(file_batches)} batches",
+                "batches_processed": len(file_batches),
+                "total_files": len(files),
+                "version": __version__
+            }
+        )
+    except Exception as e:
+        logger.exception(e)
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Failed to process files: {str(e)}"}
         )
 
 

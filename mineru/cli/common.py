@@ -363,8 +363,9 @@ async def aio_do_parse(
         **kwargs,
 ):
     # 预处理PDF字节数据
+    print("prepare pdf bytes")
     pdf_bytes_list = _prepare_pdf_bytes(pdf_bytes_list, start_page_id, end_page_id)
-
+    print("prepare pdf bytes done")
     if backend == "pipeline":
         # pipeline模式暂不支持异步，使用同步处理方式
         _process_pipeline(
