@@ -167,6 +167,8 @@ async def parse_pdf(
             content={"error": f"Failed to process file: {str(e)}"}
         )
 
+
+
 @app.post(path="/forward")
 async def forward_parse(
         files: List[UploadFile] = File(...),
@@ -189,7 +191,7 @@ async def forward_parse(
         # Split files into batches of at most 20
         batch_size = 20
         file_batches = [files[i:i + batch_size] for i in range(0, len(files), batch_size)]
-        
+        print("forward_parse")
         # Split lang_list to match batches (if needed)
         actual_lang_list = lang_list
         if len(actual_lang_list) != len(files):
