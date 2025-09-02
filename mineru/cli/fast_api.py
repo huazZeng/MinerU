@@ -22,6 +22,8 @@ from contextlib import asynccontextmanager
 from mineru.cli.common import aio_do_parse, read_fn, pdf_suffixes, image_suffixes
 from mineru.utils.cli_parser import arg_parse
 from mineru.version import __version__
+
+STORE_PATH = os.getenv("STORE_PATH", "/mnt/dhwfile/MinerU4S/zenghuazheng/mineru_store")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan event handler for FastAPI"""
@@ -64,7 +66,7 @@ cleanup_thread = None
 cleanup_stop_event = None
 
 # Persistence file path
-TASK_MAP_FILE = "/mnt/hwfile/opendatalab/MinerU4S/zenghuazheng/mineru_store/task_map.pkl"
+TASK_MAP_FILE = os.path.join(STORE_PATH, "task_map.pkl")
 
 def save_task_map():
     """Save task map to persistent storage"""
@@ -144,9 +146,9 @@ def cleanup_old_tasks():
                         completion_time = task_info.get("completion_time")
                         if completion_time:
                             time_diff = current_time - completion_time
-                            if time_diff.total_seconds() > 3 * 3600:  # 3 hours
+                            if time_diff.total_seconds() > task_info.get("save_time") * 3600:  # 3 hours
                                 tasks_to_remove.append(task_id)
-                
+                            
                 # Remove old tasks and their storage paths
                 for task_id in tasks_to_remove:
                     task_info = task_map.pop(task_id)
@@ -199,6 +201,9 @@ async def parse_pdf(
         table_enable: bool = Form(True),
         server_url: Optional[str] = Form(None),
         return_md: bool = Form(True),
+        return_layout_pdf: bool = Form(False),
+        return_span_pdf: bool = Form(False),
+        return_origin_pdf: bool = Form(False),
         return_middle_json: bool = Form(False),
         return_model_output: bool = Form(False),
         return_content_list: bool = Form(False),
@@ -264,12 +269,12 @@ async def parse_pdf(
             formula_enable=formula_enable,
             table_enable=table_enable,
             server_url=server_url,
-            f_draw_layout_bbox=True,
-            f_draw_span_bbox=True,
+            f_draw_layout_bbox=return_layout_pdf,
+            f_draw_span_bbox=return_span_pdf,
             f_dump_md=return_md,
             f_dump_middle_json=return_middle_json,
             f_dump_model_output=return_model_output,
-            f_dump_orig_pdf=True,
+            f_dump_orig_pdf=return_origin_pdf,
             f_dump_content_list=return_content_list,
             start_page_id=start_page_id,
             end_page_id=end_page_id,
@@ -338,16 +343,21 @@ async def forward_parse(
         return_middle_json: bool = Form(False),
         return_model_output: bool = Form(False),
         return_content_list: bool = Form(False),
+        return_layout_pdf: bool = Form(False),
+        return_span_pdf: bool = Form(False),
+        return_origin_pdf: bool = Form(False),
         return_images: bool = Form(False),
         start_page_id: int = Form(0),
         end_page_id: int = Form(99999),
+        save_time: int = Form(24),
+
 ):
     try:
         # Generate task ID and create storage directory
         task_id = str(uuid.uuid4())
         current_time = datetime.datetime.now()
         timestamp = current_time.strftime("%Y%m%d_%H%M%S")
-        storage_path = f"/mnt/hwfile/opendatalab/MinerU4S/zenghuazheng/mineru_store/{username}/{timestamp}"
+        storage_path = os.path.join(STORE_PATH, username, timestamp)
         
         # Create storage directory
         os.makedirs(storage_path, exist_ok=True)
@@ -393,6 +403,9 @@ async def forward_parse(
                 "return_middle_json": return_middle_json,
                 "return_model_output": return_model_output,
                 "return_content_list": return_content_list,
+                "return_origin_pdf": return_origin_pdf,
+                "return_layout_pdf": return_layout_pdf,
+                "return_span_pdf": return_span_pdf,
                 "return_images": return_images,
                 "start_page_id": start_page_id,
                 "end_page_id": end_page_id
@@ -415,6 +428,7 @@ async def forward_parse(
             if task_id in task_map:
                 task_map[task_id]["completion_time"] = completion_time
                 task_map[task_id]["status"] = "completed"
+                task_map[task_id]["save_time"] = save_time
         
         # Return success response with task information
         return JSONResponse(
@@ -428,7 +442,8 @@ async def forward_parse(
                 "username": username,
                 "start_time": current_time.isoformat(),
                 "completion_time": completion_time.isoformat(),
-                "version": __version__
+                "version": __version__,
+                "save_time" : save_time
             }
         )
     except Exception as e:
